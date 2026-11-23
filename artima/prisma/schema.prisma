@@ -1,13 +1,323 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema", "postgresqlExtensions"]
+  output          = "../generated/prisma"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  schemas    = ["auth", "users", "catalog", "cart", "orders", "payments", "favorites", "recommendation", "notifications"]
+  extensions = [vector]
+}
+
+// ─────────────────────────────────────────────
+// auth (schema: auth)
+// ─────────────────────────────────────────────
+
+enum Role {
+  BUYER
+  SELLER
+  ADMIN
+
+  @@schema("auth")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@schema("auth")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@schema("auth")
+}
+
+// ─────────────────────────────────────────────
+// users (schema: users)
+// ─────────────────────────────────────────────
+
+model BuyerProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  firstName String
+  lastName  String
+  phone     String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@schema("users")
+}
+
+model SellerProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  displayName   String
+  bio           String?
+  avatarUrl     String?
+  payoutDetails Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@schema("users")
+}
+
+model Address {
+  id         String   @id @default(uuid())
+  userId     String
+  label      String
+  country    String
+  city       String
+  street     String
+  building   String
+  apartment  String?
+  postalCode String
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@schema("users")
+}
+// ─────────────────────────────────────────────
+// catalog (schema: catalog)
+// ─────────────────────────────────────────────
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  SOLD
+  ARCHIVED
+
+  @@schema("catalog")
+}
+
+model Category {
+  id        String     @id @default(uuid())
+  name      String
+  slug      String     @unique
+  sortOrder Int        @default(0)
+  parentId  String?
+  createdAt DateTime   @default(now())
+  children  Category[] @relation("CategoryParent")
+  parent    Category?  @relation("CategoryParent", fields: [parentId], references: [id])
+
+  @@schema("catalog")
+}
+
+model Product {
+  id              String        @id @default(uuid())
+  sellerId        String
+  categoryId      String
+  title           String
+  slug            String      @unique
+  description     String?
+  price           Int
+  currency        String        @default("RUB")
+  status          ProductStatus @default(DRAFT)
+  isUnique        Boolean       @default(false)
+  technique       String?
+  style           String?
+  dimensions      Json?
+  materials       String[]      @default([])
+  tags            String[]      @default([])
+  shippingCost    Int           @default(0)
+  shippingRegions String[]      @default([])
+  shippingMethods String[]      @default([])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  images ProductImage[]
+
+  @@index([sellerId])
+  @@index([categoryId])
+  @@index([status])
+  @@schema("catalog")
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  url       String
+  alt       String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@schema("catalog")
+}
+
+// ─────────────────────────────────────────────
+// cart (schema: cart)
+// ─────────────────────────────────────────────
+
+model Cart {
+  id         String   @id @default(uuid())
+  userId     String?
+  guestToken String?  @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  items CartItem[]
+
+  @@index([userId])
+  @@schema("cart")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  productId String
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@index([cartId])
+  @@schema("cart")
+}
+
+// ─────────────────────────────────────────────
+// orders (schema: orders)
+// ─────────────────────────────────────────────
+
+enum OrderStatus {
+  AWAITING_PAYMENT
+  PAID
+  SHIPPED
+  DELIVERED
+  CLOSED
+  CANCELLED
+
+  @@schema("orders")
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  buyerId         String
+  sellerId        String
+  number          String      @unique
+  status          OrderStatus @default(AWAITING_PAYMENT)
+  totalAmount     Int
+  shippingCost    Int         @default(0)
+  shippingMethod  String?
+  shippingAddress Json
+  shippingNotes   String?
+  trackingNumber  String?
+  paidAt          DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  items OrderItem[]
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([status])
+  @@schema("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  productId String
+  sellerId  String
+  title     String
+  price     Int
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([sellerId])
+  @@schema("orders")
+}
+
+// ─────────────────────────────────────────────
+// payments (schema: payments)
+// ─────────────────────────────────────────────
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+
+  @@schema("payments")
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  orderId          String        @unique
+  provider         String
+  providerPaymentId String?
+  amount           Int
+  currency         String        @default("RUB")
+  status           PaymentStatus @default(PENDING)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([providerPaymentId])
+  @@schema("payments")
+}
+
+// ─────────────────────────────────────────────
+// favorites (schema: favorites)
+// ─────────────────────────────────────────────
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId, createdAt])
+  @@schema("favorites")
+}
+
+// ─────────────────────────────────────────────
+// recommendation (schema: recommendation)
+// ─────────────────────────────────────────────
+
+model ProductEmbedding {
+  id             String   @id @default(uuid())
+  productId      String   @unique
+  model          String   @default("clip-vit-base-patch32")
+  imageEmbedding Unsupported("vector(512)")?
+  textEmbedding  Unsupported("vector(512)")?
+  updatedAt      DateTime @updatedAt
+
+  @@schema("recommendation")
+}
+
+// ─────────────────────────────────────────────
+// notifications (schema: notifications)
+// ─────────────────────────────────────────────
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@schema("notifications")
 }
